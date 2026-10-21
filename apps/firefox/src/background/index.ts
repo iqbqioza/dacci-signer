@@ -94,6 +94,19 @@ interface PendingRequest extends RequestPayload {
 const lockPendingRequests: PendingRequest[] = [];
 const confirmPendingRequests: PendingRequest[] = [];
 
+// Methods that release identity or plaintext message data. signEvent stays
+// per-kind; every other method is scoped per-site-per-method so that, for
+// example, allowing decryption on a site never implies allowing encryption
+// or signing there.
+const CONFIRMED_METHODS = new Set([
+  "signEvent",
+  "getPublicKey",
+  "nip04.encrypt",
+  "nip04.decrypt",
+  "nip44.encrypt",
+  "nip44.decrypt",
+]);
+
 function getVaultState(): VaultState {
   const confirm = confirmPendingRequests[0];
   const event = confirm?.args[0] as
@@ -105,9 +118,10 @@ function getVaultState(): VaultState {
     confirmRequest: confirm
       ? {
           site: confirm.site ?? "",
-          kind: event?.kind ?? 0,
-          content: event?.content ?? "",
-          tags: event?.tags ?? [],
+          method: confirm.method,
+          kind: confirm.method === "signEvent" ? (event?.kind ?? 0) : null,
+          content: confirm.method === "signEvent" ? (event?.content ?? "") : "",
+          tags: confirm.method === "signEvent" ? (event?.tags ?? []) : [],
         }
       : null,
   };
@@ -118,7 +132,10 @@ function getSite(sender: browser.runtime.MessageSender): string | null {
     return null;
   }
   try {
-    return new URL(sender.url).host;
+    const url = new URL(sender.url);
+    // Non-network schemes (e.g. file:) have no host — fall back to the scheme
+    // so a missing host can never skip the confirmation gate.
+    return url.hostname || url.protocol.replace(":", "");
   } catch {
     return null;
   }
@@ -223,9 +240,13 @@ async function maybeConfirmOrRespond(
   site: string | null,
   tabId?: number,
 ): Promise<void> {
-  if (request.method === "signEvent" && site) {
-    const kind = (request.args[0] as { kind?: number } | undefined)?.kind;
-    const siteKey = kind === undefined ? site : `${site}:${kind}`;
+  if (site && CONFIRMED_METHODS.has(request.method)) {
+    const kind =
+      request.method === "signEvent"
+        ? (request.args[0] as { kind?: number } | undefined)?.kind
+        : undefined;
+    const siteKey =
+      kind !== undefined ? `${site}:${kind}` : `${site}:${request.method}`;
     const keyId = keystore.activeKeyId;
     const setting = keyId ? siteSettings[keyId]?.[siteKey] : undefined;
     if (setting === "deny") {
@@ -233,7 +254,7 @@ async function maybeConfirmOrRespond(
         type: "nostr:response",
         requestId: request.requestId,
         ok: false,
-        error: "signing denied by site policy",
+        error: "request denied by site policy",
       });
       return;
     }
@@ -307,16 +328,10 @@ function flushPendingRequests(): void {
 }
 
 function prepareConfirmRequests(): void {
-  const remaining: PendingRequest[] = [];
-  for (const request of lockPendingRequests) {
-    if (request.method === "signEvent") {
-      void maybeConfirmOrRespond(request, request.sendResponse, request.site ?? null, request.tabId);
-    } else {
-      remaining.push(request);
-    }
+  while (lockPendingRequests.length > 0) {
+    const request = lockPendingRequests.shift()!;
+    void maybeConfirmOrRespond(request, request.sendResponse, request.site ?? null, request.tabId);
   }
-  lockPendingRequests.length = 0;
-  lockPendingRequests.push(...remaining);
 }
 
 async function handlePanelRequest(

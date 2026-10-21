@@ -19,7 +19,8 @@ export type ConfirmDecision = "allow" | "deny" | "alwaysAllow" | "alwaysDeny";
 
 export interface ConfirmRequestInfo {
   site: string;
-  kind: number;
+  method: string;
+  kind: number | null;
   content: string;
   tags: string[][];
 }
