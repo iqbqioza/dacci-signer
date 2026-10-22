@@ -103,23 +103,41 @@
       window.parent.postMessage({ type: "dacci:closePanel" }, "*");
     }
   }
+
+  const methodLabels: Record<string, string> = {
+    getPublicKey: "access your public key",
+    "nip04.encrypt": "encrypt a message using NIP-04",
+    "nip04.decrypt": "decrypt a message using NIP-04",
+    "nip44.encrypt": "encrypt a message using NIP-44",
+    "nip44.decrypt": "decrypt a message using NIP-44",
+  };
+
+  let isSigning = $derived(request.method === "signEvent");
+  let methodLabel = $derived(methodLabels[request.method] ?? request.method);
 </script>
 
 <div class="space-y-4">
-  <h2 class="text-base font-medium">Signing Confirmation</h2>
-  <p class="text-gray-600 ">{request.site}  is requesting a signature.</p>
+  <h2 class="text-base font-medium">{isSigning ? "Signing Confirmation" : "Permission Request"}</h2>
+  <p class="text-gray-600 ">
+    {request.site}
+    {isSigning ? "is requesting a signature." : `wants to ${methodLabel}.`}
+  </p>
 
-  <div class="rounded border border-gray-300 p-3 ">
-    <span class="block text-xs text-gray-500 ">Event kind</span>
-    <p class="font-mono text-sm">kind: {request.kind}</p>
-  </div>
+  {#if request.kind !== null}
+    <div class="rounded border border-gray-300 p-3 ">
+      <span class="block text-xs text-gray-500 ">Event kind</span>
+      <p class="font-mono text-sm">kind: {request.kind}</p>
+    </div>
+  {/if}
 
-  <div>
-    <span class="mb-1 block text-xs text-gray-500 ">Content</span>
-    <pre class="max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded border border-gray-300 bg-gray-50 p-3 font-mono text-xs text-gray-700   ">{request.content}</pre>
-  </div>
+  {#if request.content}
+    <div>
+      <span class="mb-1 block text-xs text-gray-500 ">Content</span>
+      <pre class="max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded border border-gray-300 bg-gray-50 p-3 font-mono text-xs text-gray-700   ">{request.content}</pre>
+    </div>
+  {/if}
 
-  {#if request.tags.length > 0}
+  {#if isSigning && request.tags.length > 0}
     <div>
       <span class="mb-1 block text-xs text-gray-500 ">Tags</span>
       <pre class="max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded border border-gray-300 bg-gray-50 p-3 font-mono text-xs text-gray-700   ">{JSON.stringify(request.tags)}</pre>
